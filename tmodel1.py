@@ -14,6 +14,8 @@ import scipy.stats as stats
 #------------------------
 threshold = 33  # Threshold for dropping columns with missing values
 vif_drop = 30    # Threshold for VIF analysis
+target_col = "Intrinsic Engagement"  # Add target column name
+vif_threshold = 30  # Add VIF threshold
 csv_file_path = r"C:\Users\boulb\OneDrive\Documents\A002 - CS50X\pydata\data\testdata5.csv"
 
 # Data Loading and Initial Analysis
@@ -244,17 +246,26 @@ def perform_cross_validation_analysis(X, y):
     # Plot
     plt.figure(figsize=(12, 6))
     colors = plt.cm.coolwarm(np.linspace(0, 1, len(results_df)))
-    bars = plt.barh(results_df['Feature'], results_df['Mean R2'], 
+    bars = plt.barh(results_df['Feature'], results_df['Mean R2'],
                    xerr=results_df['Std R2'], color=colors)
     plt.title('Feature Individual Predictive Power (Cross-Validation R² Score)')
     plt.xlabel('R² Score')
     
-    # Add value labels
+    # Add value labels with offset
+    label_offset = 0.01  # Adjust this value to control the distance between bar and label
     for bar in bars:
         width = bar.get_width()
-        plt.text(width, bar.get_y() + bar.get_height()/2, 
-                f'{width:.3f}', 
-                ha='left', va='center', fontweight='bold')
+        std_err = results_df['Std R2'].iloc[bars.index(bar)]  # Get corresponding std error
+        # Position the label after the error bar
+        label_x = width + std_err + label_offset
+        plt.text(label_x, bar.get_y() + bar.get_height()/2,
+                f'{width:.3f}',
+                ha='left', va='center', fontweight='bold',
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
+    
+    # Adjust plot limits to accommodate labels
+    current_xlim = plt.xlim()
+    plt.xlim(current_xlim[0], current_xlim[1] + 0.1)  # Add some padding on the right
     
     plt.tight_layout()
     plt.show()
@@ -265,20 +276,28 @@ def calculate_feature_rankings(X, y, model):
     """Calculate and combine different feature importance metrics"""
     # Remove 'const' column if it exists
     X_rank = X.copy()
-    if 'const' in X_rank.columns:
+    features = X_rank.columns.tolist()
+    if 'const' in features:
         X_rank = X_rank.drop('const', axis=1)
+        features.remove('const')
     
     # Get linear regression coefficients (excluding constant)
+    # Handle the case where model has a constant term
+    if 'const' in model.params.index:
+        coefficients = model.params[1:]  # Skip the constant term
+    else:
+        coefficients = model.params
+    
     coef_importance = pd.DataFrame({
-        'Feature': X_rank.columns,
-        'Linear_Coefficient': abs(model.params[1:])  # Skip the constant term
+        'Feature': features,
+        'Linear_Coefficient': abs(coefficients)
     })
     
     # Get Random Forest importance
     rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
     rf_model.fit(X_rank, y)
     rf_importance = pd.DataFrame({
-        'Feature': X_rank.columns,
+        'Feature': features,
         'RF_Importance': rf_model.feature_importances_
     })
     
@@ -340,9 +359,8 @@ def main():
     df_cleaned = prepare_numeric_data(df_cleaned)
     
     print("\n=== Missing Values Info ===")
-    miss_V = perform_vif_analysis(df, target_col, vif_threshold)
+    miss_V = perform_vif_analysis(df_cleaned, target_col, vif_threshold)
     print(miss_V)
-    
     
     # Perform analysis
     X, y = perform_vif_analysis(df_cleaned, "Intrinsic Engagement", vif_drop)
